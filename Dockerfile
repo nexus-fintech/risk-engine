@@ -27,7 +27,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 # Copiamos el código fuente de la aplicación
-COPY ./app ./app
+# COPY ./app ./app
+
+# 3. CRÍTICO: Copiamos TODO el directorio actual al contenedor
+# Esto incluye: carpeta app/, nexus_risk_model.pkl, nexus_credit_data.xlsx
+COPY . .
 
 # Exponemos el puerto de FastAPI
 EXPOSE 8000

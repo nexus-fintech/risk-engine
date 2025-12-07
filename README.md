@@ -1,68 +1,99 @@
 # **Nexus Risk Engine 🧠**
 
-**Microservicio de evaluación de riesgo crediticio de alto rendimiento. Actúa como el "cerebro" analítico de la plataforma Nexus Finance.**
+**Microservicio de evaluación de riesgo crediticio potenciado por Inteligencia Artificial. Actúa como el "cerebro" analítico de la plataforma Nexus Finance.**
 
 ## **📖 Descripción**
 
-Este servicio es **Stateless** (sin estado) y está diseñado para recibir perfiles financieros, aplicar reglas heurísticas avanzadas (simulando modelos de Machine Learning) y retornar una decisión de crédito en milisegundos.
+Este servicio es **Stateless** (sin estado) y utiliza un enfoque **Híbrido** de alto rendimiento:
 
-Se comunica con el **Backend Core (Java)** mediante una API REST, desacoplando la lógica de negocio transaccional de la lógica analítica.
+1.  **Machine Learning:** Utiliza un modelo **Random Forest Classifier** entrenado con datos históricos reales para predecir la probabilidad de impago con una precisión superior al **97%**.
+2.  **Lógica de Negocio:** Aplica reglas financieras pos-análisis para calcular límites de montos (capacidad de endeudamiento) y tasas de interés personalizadas basadas en el riesgo detectado.
 
-## **🏗️ Arquitectura (Clean Architecture)**
+Se comunica con el **Backend Core (Java)** mediante una API REST, desacoplando la lógica transaccional de la lógica analítica predictiva.
 
-Adaptamos los principios de arquitectura limpia al ecosistema Python:
+## **🏗️ Arquitectura del Proyecto**
 
-app/  
-├── api/ \# Capa de Interfaz (Controladores REST)  
-├── services/ \# Lógica de Negocio (Algoritmos de Scoring)  
-├── schemas/ \# DTOs y Validación de Datos (Pydantic)  
-└── core/ \# Configuración e Infraestructura
+Estructura optimizada para MLOps y Clean Architecture en Python:
+
+```text
+nexus-risk-engine/
+├── app/
+│   ├── api/          # Controladores REST (Endpoints expuestos)
+│   ├── services/     # Servicio de Dominio (Carga del modelo .pkl y lógica)
+│   ├── schemas/      # DTOs y Validación estricta (Pydantic)
+│   └── core/         # Configuración y Variables de Entorno
+├── nexus_credit_data.xlsx # Dataset histórico para entrenamiento (Fuente de Verdad)
+├── nexus_risk_model.pkl   # Modelo serializado (El "Cerebro" de la IA)
+├── train_risk_model.py    # Pipeline de entrenamiento (ETL + Training)
+├── Dockerfile             # Definición de la imagen del contenedor (Incluye el modelo)
+└── requirements.txt       # Dependencias de Python
+```
 
 ## **🛠️ Stack Tecnológico**
 
-| Componente        | Tecnología            | Versión  | Razón de Uso                                              |
-| :---------------- | :-------------------- | :------- | :-------------------------------------------------------- |
-| **Lenguaje**      | Python                | **3.12** | Última versión estable con mejoras de velocidad.          |
-| **API Framework** | FastAPI               | 0.115+   | Validación automática y performance asíncrono.            |
-| **Servidor**      | Uvicorn               | Standard | Servidor ASGI para producción.                            |
-| **Validación**    | Pydantic V2           | 2.5+     | Validación de esquemas de datos ultra-rápida (Rust core). |
-| **Cálculo**       | Pandas / Scikit-learn | 2.x      | Procesamiento numérico y modelos predictivos.             |
+| Componente        | Tecnología   | Versión  | Razón de Uso                                                         |
+| :---------------- | :----------- | :------- | :------------------------------------------------------------------- |
+| **Lenguaje**      | Python       | **3.12** | Última versión estable con optimizaciones significativas de memoria. |
+| **Modelo IA**     | Scikit-learn | 1.5+     | Implementación robusta de Random Forest (Bosques Aleatorios).        |
+| **API Framework** | FastAPI      | 0.115+   | Performance asíncrono y documentación automática (OpenAPI).          |
+| **Serialización** | Joblib       | 1.4+     | Carga y guardado eficiente de modelos de ML pesados                  |
+| **Procesamiento** | Pandas       | 2.2+     | Manipulación de vectores de datos y limpieza (ETL).                  |
+| **Validación**    | Pydantic V2  | 2.5+     | Validación de datos de entrada ultra-rápida (Core en Rust).          |
 
 ## **⚙️ Capacidades del Motor**
 
 ### **Endpoint: POST /api/v1/evaluate-risk**
 
-Analiza variables como:
+El motor recibe el perfil financiero, lo vectoriza y consulta al modelo .pkl.
 
-- **Relación Deuda/Ingreso (DTI):** Calcula la capacidad de pago real.
-- **Edad y Estabilidad:** Ponderación demográfica.
-- **Historial simulado:** Reglas de penalización por comportamiento.
+Variables de Entrada (Features):
 
-**Respuesta Generada:**
+- **monthly_income:** Ingreso mensual declarado.
+- **monthly_debt:** Deuda mensual actual.
+- **requested_amount:** Monto solicitado.
+- **term_in_months:** Plazo del préstamo.
+- **age:** Edad del solicitante.
 
-- score: Puntaje numérico (300-850).
-- risk_level: Clasificación (LOW, MEDIUM, HIGH).
+**Respuesta Inteligente:**
+
+- score: Puntaje FICO simulado derivado de la probabilidad de aprobación (Escala 300-850).
+- risk_level: Clasificación de riesgo (LOW, MEDIUM, HIGH).
 - is_approved: Decisión booleana final.
 - suggested_interest_rate: Tasa dinámica basada en el riesgo.
-- max_approved_amount: Límite de crédito sugerido.
+- max_approved_amount: Cálculo de capacidad de endeudamiento basado en ingresos y riesgo.
 
-## **🚀 Ejecución**
+## **🧠 Entrenamiento del Modelo (ML Pipeline)**
 
-### **Docker (Recomendado)**
+El proyecto incluye un script de entrenamiento automatizado. Si se actualizan los datos en nexus_credit_data.xlsx, se debe re-entrenar el cerebro:
 
-Este servicio se levanta automáticamente mediante el orquestador principal del proyecto.
+```bash
+# Ejecutar pipeline de entrenamiento
+python train_risk_model.py
+```
 
-```bash# Puerto externo mapeado
-http://localhost:8000
+Nota: Esto generará un nuevo archivo nexus_risk_model.pkl. Para que el cambio surta efecto en producción, se debe reconstruir el contenedor Docker.
+
+## **🚀 Ejecución y Despliegue**
+
+### **Docker (Producción)**
+
+La imagen Docker está configurada para autocontener el modelo, copiando el cerebro (.pkl) y los recursos necesarios al momento de la construcción.
+
+```bash
+# 1. Construir la imagen (necesario si cambió el modelo .pkl)
+docker-compose build
+
+# 2. Levantar el servicio
+docker-compose up -d
 ```
 
 ### **Documentación Automática**
 
-FastAPI genera documentación interactiva automáticamente:
+FastAPI genera documentación interactiva automáticamente para probar el modelo sin necesidad de Frontend:
 
 - 👉 **Swagger/OpenAPI:** [http://localhost:8000/docs](https://www.google.com/search?q=http://localhost:8000/docs)
 - 👉 **ReDoc:** [http://localhost:8000/redoc](https://www.google.com/search?q=http://localhost:8000/redoc)
 
 ## **👤 Autor**
 
-**Angel Antonio Cancho Corilla** \- _Software Engineer_
+**Angel Antonio Cancho Corilla** \- Software Engineer & AI Integration

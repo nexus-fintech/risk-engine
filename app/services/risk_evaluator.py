@@ -1,32 +1,67 @@
+import pandas as pd
+import joblib
+import os
 from app.schemas.credit_request import CreditRequest
 from app.schemas.credit_score import CreditScore, RiskLevel
 from app.core.config import settings
 
 class RiskEvaluatorService:
     """
-    Domain service responsible for calculating the credit score.
-    Applies financial heuristic rules based on income, debt, and age.
+    Domain service responsible for calculating credit scores using a pre-trained 
+    Random Forest Classifier. It performs inference on client data to determine 
+    loan eligibility.
     """
 
+    def __init__(self):
+        # 1. Model Loading (Implicit Singleton)
+        # We look for the .pkl file copied to the container root during build
+        model_path = "nexus_risk_model.pkl"
+        
+        if os.path.exists(model_path):
+            self.model = joblib.load(model_path)
+            print(f"AI Model loaded successfully from: {model_path}")
+        else:
+            # Security fallback in case build context failed
+            print(f"warning: {model_path} not found. Service will fail on evaluation.")
+            self.model = None
+
     def evaluate(self, request: CreditRequest) -> CreditScore:
-        # 1. Base Calculation (Simulated FICO Score: 300 - 850)
-        score = self._calculate_base_score(request)
+        # Operational Safety Check
+        if not self.model:
+            raise RuntimeError("AI Model is not initialized or found.")
 
-        # 2. Determine Risk Level
+        # 2. Data Vectorization (Feature Mapping)
+        # Keys (Left): Must match Training Features exactly (nexus_credit_data.xlsx headers)
+        # Values (Right): Must match Pydantic Input Schema (snake_case)
+        input_data = pd.DataFrame([{
+            'monthly_income':   request.monthly_income,
+            'requested_amount': request.requested_amount,
+            'term_in_months':   request.term_in_months,
+            'age':              request.age,
+            'monthly_debt':     request.monthly_debt
+        }])
+
+        # 3. Inference (Prediction)
+        # predict_proba returns [[prob_reject, prob_approve]]
+        # We extract index 1 (probability of approval)
+        approval_probability = self.model.predict_proba(input_data)[0][1]
+
+        # 4. Score Transformation (Mapping)
+        # Convert probability (e.g., 0.72) to simulated FICO scale (300 - 850)
+        # Formula: Base 300 + (Probability * 550 possible points)
+        score = int(300 + (approval_probability * 550))
+
+        # 5. Risk Classification & Decision
         risk_level = self._determine_risk_level(score)
-
-        # 3. Approval Decision
+        
+        # Approval Threshold (defined in settings, e.g., 650)
         is_approved = score >= settings.MIN_SCORE_APPROVE
 
-        # 4. Suggested Interest Rate Calculation (Higher risk => higher rate)
+        # 6. Financial Calculations (Business Logic)
+        # Calculate max capacity based on income if approved
+        max_amount = request.monthly_income * 10 if is_approved else 0.0
+        
         interest_rate = self._calculate_interest_rate(score, settings.BASE_INTEREST_RATE)
-
-        # 5. Maximum Loan Amount (Based on payment capacity)
-        max_amount = self._calculate_max_amount(request.monthly_income, request.monthly_debt)
-
-        # If not approved, limit the amount to 0
-        if not is_approved:
-            max_amount = 0.0
 
         return CreditScore(
             score=score,
@@ -36,53 +71,13 @@ class RiskEvaluatorService:
             max_approved_amount=round(max_amount, 2)
         )
 
-    def _calculate_base_score(self, request: CreditRequest) -> int:
-        """Calculates a score between 300 and 850 based on weighted rules."""
-        score = 600  # Neutral base score
-
-        # Factor 1: Debt-to-Income Ratio (DTI) – most critical
-        dti = request.debt_to_income_ratio
-        if dti < 0.30:
-            score += 100  # Excellent capacity
-        elif dti < 0.50:
-            score += 50   # Acceptable
-        elif dti > 0.70:
-            score -= 100  # Highly indebted
-
-        # Factor 2: Age (Implied financial stability)
-        if 25 <= request.age <= 55:
-            score += 50
-        elif request.age < 21:
-            score -= 20
-
-        # Factor 3: High Income
-        if request.monthly_income > 3000:  # Reference value in USD or local currency
-            score += 50
-
-        # Normalization (Clamp) between 300 and 850
-        return max(300, min(850, score))
-
     def _determine_risk_level(self, score: int) -> RiskLevel:
-        if score >= 750:
-            return RiskLevel.LOW
-        elif score >= 650:
-            return RiskLevel.MEDIUM
-        else:
-            return RiskLevel.HIGH
+        if score >= 750: return RiskLevel.LOW
+        elif score >= 650: return RiskLevel.MEDIUM
+        return RiskLevel.HIGH
 
     def _calculate_interest_rate(self, score: int, base_rate: float) -> float:
-        """Reduces the rate if the score is good, increases it if the score is poor."""
-        if score >= 750:
-            return base_rate - 0.02  # 2% discount
-        elif score >= 650:
-            return base_rate         # Base rate
-        else:
-            return base_rate + 0.05  # 5% penalty
-
-    def _calculate_max_amount(self, income: float, debt: float) -> float:
-        """
-        Rule: The installment should not exceed 40% of net disposable income.
-        Simplified estimation of total borrowing capacity.
-        """
-        disposable_income = income - debt
-        return max(0.0, disposable_income * 10)  # Example: 10 times the free income
+        # Rate adjustment based on AI Score
+        if score >= 750: return base_rate - 0.02 
+        elif score >= 650: return base_rate      
+        return base_rate + 0.05                   
